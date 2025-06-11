@@ -1,1 +1,1 @@
-# Hello SnapKitty
+# SnapKitty
