@@ -6,10 +6,11 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import connectDB from './db.js';
+import OpenAI from 'openai'; // ✅ New OpenAI SDK v4 import
 
 dotenv.config();
 
-// Setup __dirname for ES modules
+// Setup __dirname for ES module compatibility
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -20,15 +21,22 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-// Serve frontend static files
+// Serve static frontend files
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Only serve uploaded files locally (GAE uses /tmp which can't be exposed)
+// Serve uploaded files only in development
 if (process.env.NODE_ENV !== 'production') {
   app.use('/uploads', express.static('uploads'));
 }
 
-// Multer upload configuration
+// Connect to MongoDB
+let db;
+connectDB().then(database => {
+  db = database;
+  console.log("✅ MongoDB connected");
+});
+
+// Configure file uploads with Multer
 const upload = multer({
   storage: multer.diskStorage({
     destination: process.env.NODE_ENV === 'production' ? '/tmp' : 'uploads/',
@@ -46,12 +54,61 @@ const upload = multer({
   }
 });
 
-// Get upload history (latest 20 uploads)
+// Initialize OpenAI client (v4 style)
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+// Upload endpoint
+app.post('/api/upload', upload.single('image'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
+
+  console.log('📥 Received file:', req.file.originalname);
+
+  try {
+    const record = {
+      filename: req.file.filename,
+      uploadTime: new Date(),
+      extractedText: '',   // placeholder for OCR result
+      keywords: '',        // will be filled by GPT
+    };
+
+    const result = await db.collection('uploads').insertOne(record);
+    const insertedId = result.insertedId;
+
+    // Placeholder extracted text (replace with OCR result later)
+    const extractedText = 'This is a placeholder text for OCR extraction.';
+
+    // Use Chat Completions API (gpt-3.5-turbo)
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-3.5-turbo',
+      messages: [
+        {
+          role: 'user',
+          content: `Extract 3 to 5 keywords from the following question:\n"${extractedText}"\nReturn them comma-separated.`,
+        },
+      ],
+    });
+    
+    const keywords = completion.choices[0].message.content.trim();
+
+    // Update the record with extracted content
+    await db.collection('uploads').updateOne(
+      { _id: insertedId },
+      { $set: { extractedText, keywords } }
+    );
+
+    res.json({ message: 'Upload successful', filename: req.file.filename });
+  } catch (err) {
+    console.error('❌ Upload failed:', err.message);
+    res.status(500).json({ message: 'Upload failed' });
+  }
+});
+
+// Get latest upload records
 app.get('/api/records', async (req, res) => {
   try {
-    if (!db) {
-      return res.status(503).json({ message: 'Database not ready' });
-    }
+    if (!db) return res.status(503).json({ message: 'Database not ready' });
 
     const records = await db.collection('uploads')
       .find({})
@@ -62,47 +119,11 @@ app.get('/api/records', async (req, res) => {
     res.json(records);
   } catch (err) {
     console.error('❌ Failed to fetch records:', err.message);
-    res.status(500).json({ message: 'Error fetching upload records' });
+    res.status(500).json({ message: 'Fetch failed' });
   }
 });
 
-
-// Connect to MongoDB
-let db;
-connectDB().then(database => {
-  db = database;
-  console.log("✅ MongoDB connected");
-});
-
-// Upload API (saves file + DB record)
-app.post('/api/upload', upload.single('image'), async (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ message: 'No file uploaded' });
-  }
-
-  console.log('📥 Received file:', req.file.originalname);
-
-  try {
-    const record = {
-      filename: req.file.filename,
-      uploadTime: new Date(),
-      extractedText: '', // placeholder for OCR/GPT content
-    };
-    if (db) {
-      await db.collection('uploads').insertOne(record);
-      console.log(`✅ Saved record for: ${req.file.filename}`);
-    }
-    res.json({
-      message: 'Upload successful',
-      filename: req.file.filename
-    });
-  } catch (err) {
-    console.error('❌ Failed to save record:', err.message);
-    res.status(500).json({ message: 'Upload failed: could not save record' });
-  }
-});
-
-// 🔥 Temporary cleanup route (DEV ONLY)
+// Clear all records from database
 app.get('/api/clear-records', async (req, res) => {
   try {
     const result = await db.collection('uploads').deleteMany({});
@@ -112,19 +133,18 @@ app.get('/api/clear-records', async (req, res) => {
   }
 });
 
-
-// Simple test route
+// Debug route to check DB collections
 app.get('/api/hello', async (req, res) => {
   const collections = db ? await db.listCollections().toArray() : [];
   res.send('Hello from server! DB contains: ' + collections.map(c => c.name).join(', '));
 });
 
-// Fallback: Serve React frontend for any non-API route
+// Fallback to React frontend for non-API routes
 app.get(/^(?!\/api).*/, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Start the server
+// Start the Express server
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
 });

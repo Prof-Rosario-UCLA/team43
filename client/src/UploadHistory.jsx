@@ -71,7 +71,7 @@ function UploadHistory() {
           {records.map((rec) => {
             const url =
               import.meta.env.MODE === 'production'
-                ? `/tmp/${rec.filename}` // GAE: for /tmp or GCS (future)
+                ? `/tmp/${rec.filename}`
                 : `/uploads/${rec.filename}`;
 
             return (
@@ -90,6 +90,9 @@ function UploadHistory() {
                 />
                 <p style={{ marginTop: '10px', fontSize: '0.9rem' }}>
                   Uploaded at: {new Date(rec.uploadTime).toLocaleString()}
+                </p>
+                <p style={{ fontSize: '0.85rem', color: '#444' }}>
+                  <strong>📌 Keywords:</strong> {rec.keywords || 'N/A'}
                 </p>
               </div>
             );
