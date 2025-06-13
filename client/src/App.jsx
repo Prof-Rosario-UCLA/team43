@@ -65,25 +65,31 @@ function App() {
     }
   };
 
-  // 👇 未登录状态：显示 LoginForm 或 RegisterForm
+  // 👇 Not logged in: Display LoginForm or RegisterForm
   if (!loggedIn) {
     return showRegister ? (
       <RegisterForm
-        onRegister={() => setLoggedIn(true)}
+        onRegister={() => {
+          setLoggedIn(true);
+          window.location.reload(); // ✅ reload to apply token
+        }}
         onSwitchToLogin={() => setShowRegister(false)}
       />
     ) : (
       <LoginForm
-        onLogin={() => setLoggedIn(true)}
+        onLogin={() => {
+          setLoggedIn(true);
+          window.location.reload(); // ✅ reload to apply token
+        }}
         onSwitchToRegister={() => setShowRegister(true)}
       />
     );
   }
 
-  // ✅ 登录后界面
+  // ✅ Login interface
   return (
     <div style={{ padding: '40px' }}>
-      {/* ✅ 登出按钮 */}
+      {/* ✅ Logout Button */}
       <div style={{ textAlign: 'right', marginBottom: '10px' }}>
         <button
           onClick={() => {
