@@ -31,7 +31,7 @@ function UploadHistory() {
       const res = await fetch('/api/clear-records');
       const text = await res.text();
       alert(text);
-      window.location.reload(); // Refresh after clearing
+      setRecords([]); // Update UI without full reload
     } catch (err) {
       console.error('Failed to clear records:', err);
       alert('Failed to clear records');
@@ -40,11 +40,26 @@ function UploadHistory() {
     }
   };
 
+  // Delete single record
+  const handleDelete = async (id) => {
+    if (!window.confirm('Delete this record?')) return;
+
+    try {
+      const res = await fetch(`/api/records/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      alert(data.message);
+      setRecords((prev) => prev.filter((rec) => rec._id !== id));
+    } catch (err) {
+      console.error('Failed to delete record:', err);
+      alert('Failed to delete record');
+    }
+  };
+
   return (
     <div style={{ padding: '20px' }}>
       <h2>📜 Upload History</h2>
 
-      {/* Clear button */}
+      {/* Clear All button */}
       <div style={{ textAlign: 'right', marginBottom: '10px' }}>
         <button
           onClick={handleClearAll}
@@ -81,6 +96,7 @@ function UploadHistory() {
                   border: '1px solid #ccc',
                   padding: '10px',
                   borderRadius: '6px',
+                  position: 'relative',
                 }}
               >
                 <img
@@ -92,8 +108,28 @@ function UploadHistory() {
                   Uploaded at: {new Date(rec.uploadTime).toLocaleString()}
                 </p>
                 <p style={{ fontSize: '0.85rem', color: '#444' }}>
-                  <strong>📌 Keywords:</strong> {rec.keywords || 'N/A'}
+                  <strong>📖 Text:</strong> {rec.extractedText || 'Not available'}
                 </p>
+                <p style={{ fontSize: '0.85rem', color: '#444' }}>
+                  <strong>📌 Keywords:</strong> {rec.keywords || 'Not available'}
+                </p>
+
+                {/* 🗑 Delete Button */}
+                <button
+                  onClick={() => handleDelete(rec._id)}
+                  style={{
+                    position: 'absolute',
+                    top: '8px',
+                    right: '8px',
+                    background: 'transparent',
+                    border: 'none',
+                    fontSize: '18px',
+                    cursor: 'pointer',
+                  }}
+                  title="Delete this record"
+                >
+                  🗑
+                </button>
               </div>
             );
           })}

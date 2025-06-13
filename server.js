@@ -5,38 +5,33 @@ import path from 'path';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import { ObjectId } from 'mongodb';
 import connectDB from './db.js';
-import OpenAI from 'openai'; // ✅ New OpenAI SDK v4 import
+import OpenAI from 'openai';
+import Tesseract from 'tesseract.js'; // ✅ OCR support
 
 dotenv.config();
 
-// Setup __dirname for ES module compatibility
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Middleware
 app.use(cors());
 app.use(express.json());
-
-// Serve static frontend files
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Serve uploaded files only in development
 if (process.env.NODE_ENV !== 'production') {
   app.use('/uploads', express.static('uploads'));
 }
 
-// Connect to MongoDB
 let db;
 connectDB().then(database => {
   db = database;
   console.log("✅ MongoDB connected");
 });
 
-// Configure file uploads with Multer
 const upload = multer({
   storage: multer.diskStorage({
     destination: process.env.NODE_ENV === 'production' ? '/tmp' : 'uploads/',
@@ -54,12 +49,11 @@ const upload = multer({
   }
 });
 
-// Initialize OpenAI client (v4 style)
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Upload endpoint
+// Upload endpoint with OCR + GPT
 app.post('/api/upload', upload.single('image'), async (req, res) => {
   if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
 
@@ -69,17 +63,24 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
     const record = {
       filename: req.file.filename,
       uploadTime: new Date(),
-      extractedText: '',   // placeholder for OCR result
-      keywords: '',        // will be filled by GPT
+      extractedText: '',
+      keywords: '',
     };
 
     const result = await db.collection('uploads').insertOne(record);
     const insertedId = result.insertedId;
 
-    // Placeholder extracted text (replace with OCR result later)
-    const extractedText = 'This is a placeholder text for OCR extraction.';
+    // OCR step
+    const imagePath =
+      process.env.NODE_ENV === 'production'
+        ? `/tmp/${req.file.filename}`
+        : `uploads/${req.file.filename}`;
 
-    // Use Chat Completions API (gpt-3.5-turbo)
+    const ocr = await Tesseract.recognize(imagePath, 'eng');
+    const extractedText = ocr.data.text.trim().slice(0, 500);
+    console.log('🔍 OCR Result:', extractedText);
+
+    // GPT step
     const completion = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: [
@@ -89,10 +90,9 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
         },
       ],
     });
-    
+
     const keywords = completion.choices[0].message.content.trim();
 
-    // Update the record with extracted content
     await db.collection('uploads').updateOne(
       { _id: insertedId },
       { $set: { extractedText, keywords } }
@@ -105,7 +105,7 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
   }
 });
 
-// Get latest upload records
+// Get records
 app.get('/api/records', async (req, res) => {
   try {
     if (!db) return res.status(503).json({ message: 'Database not ready' });
@@ -123,7 +123,24 @@ app.get('/api/records', async (req, res) => {
   }
 });
 
-// Clear all records from database
+// Delete single record
+app.delete('/api/records/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const result = await db.collection('uploads').deleteOne({ _id: new ObjectId(id) });
+
+    if (result.deletedCount === 1) {
+      res.json({ message: '✅ Record deleted' });
+    } else {
+      res.status(404).json({ message: '❌ Record not found' });
+    }
+  } catch (err) {
+    console.error('❌ Failed to delete record:', err.message);
+    res.status(500).json({ message: 'Error deleting record' });
+  }
+});
+
+// Clear all
 app.get('/api/clear-records', async (req, res) => {
   try {
     const result = await db.collection('uploads').deleteMany({});
@@ -133,18 +150,17 @@ app.get('/api/clear-records', async (req, res) => {
   }
 });
 
-// Debug route to check DB collections
+// Debug route
 app.get('/api/hello', async (req, res) => {
   const collections = db ? await db.listCollections().toArray() : [];
   res.send('Hello from server! DB contains: ' + collections.map(c => c.name).join(', '));
 });
 
-// Fallback to React frontend for non-API routes
+// Frontend fallback
 app.get(/^(?!\/api).*/, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Start the Express server
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
 });
