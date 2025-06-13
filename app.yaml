@@ -1,0 +1,24 @@
+runtime: nodejs20
+instance_class: F1
+env_variables:
+  NODE_ENV: "production"
+  JWT_SECRET: "snapkitty_super_secure_token"
+  OPENAI_API_KEY: "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"
+
+handlers:
+
+  - url: /favicon\.ico
+    static_files: public/favicon.ico
+    upload: public/favicon.ico
+
+  - url: /assets             
+    static_dir: public/assets
+
+  - url: /static
+    static_dir: public/static
+
+  - url: /api/.*
+    script: auto
+
+  - url: /.*
+    script: auto

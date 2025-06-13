@@ -3,7 +3,7 @@ import { useState } from 'react';
 function App() {
   const [message, setMessage] = useState('No upload yet');
   const [file, setFile] = useState(null);
-  const [imageUrl, setImageUrl] = useState(''); // 
+  const [imageUrl, setImageUrl] = useState('');
 
   const handleUpload = async () => {
     if (!file) {
@@ -19,10 +19,11 @@ function App() {
         method: 'POST',
         body: formData,
       });
+
       const data = await res.json();
 
       setMessage('✅ Uploaded: ' + data.filename);
-      setImageUrl('/uploads/' + data.filename); 
+      setImageUrl('/uploads/' + data.filename); // ✅ 改为相对路径
     } catch (err) {
       setMessage('Upload failed');
     }

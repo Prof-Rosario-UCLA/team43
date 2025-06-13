@@ -7,17 +7,20 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Enable CORS for all origins (for development and deployment flexibility)
+// Enable CORS for all origins
 app.use(cors());
 app.use(express.json());
 
-// Serve uploaded files statically from the "uploads" directory
+// ✅ Serve front-end first (this line must come first)
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Serve uploaded files statically
 app.use('/uploads', express.static('uploads'));
 
-// Configure multer to store files in "uploads/" with a timestamped filename
+// Multer upload config
 const upload = multer({
   storage: multer.diskStorage({
-    destination: 'uploads/',
+    destination: process.env.NODE_ENV === 'production' ? '/tmp' : 'uploads/',
     filename: (req, file, cb) => {
       const ext = path.extname(file.originalname);
       const filename = Date.now() + ext;
@@ -25,7 +28,6 @@ const upload = multer({
     }
   }),
   fileFilter: (req, file, cb) => {
-    // Only allow image files
     if (!file.mimetype.startsWith('image/')) {
       return cb(new Error('Only images are allowed!'));
     }
@@ -33,25 +35,29 @@ const upload = multer({
   }
 });
 
-// Upload route to handle file upload from the frontend
+// Upload API
 app.post('/api/upload', upload.single('image'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ message: 'No file uploaded' });
   }
-
   console.log('Received file:', req.file.originalname);
   res.json({
     message: 'Upload successful',
-    filename: req.file.filename // send filename back to frontend
+    filename: req.file.filename
   });
 });
 
-// Test route
+// Simple API for test
 app.get('/api/hello', (req, res) => {
   res.send('Hello from server!');
 });
 
-// Start the server
+// React fallback for all non-API routes
+app.get(/^(?!\/api).*/, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Start server
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
