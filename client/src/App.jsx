@@ -23,7 +23,7 @@ function App() {
       const data = await res.json();
 
       setMessage('✅ Uploaded: ' + data.filename);
-      setImageUrl('/uploads/' + data.filename); // ✅ 改为相对路径
+      setImageUrl('/uploads/' + data.filename); 
     } catch (err) {
       setMessage('Upload failed');
     }

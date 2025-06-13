@@ -1,23 +1,28 @@
-const express = require('express');
-const cors = require('cors');
-const multer = require('multer');
-const path = require('path');
-require('dotenv').config();
+import express from 'express';
+import cors from 'cors';
+import multer from 'multer';
+import path from 'path';
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+import connectDB from './db.js'; // 
+
+dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Enable CORS for all origins
 app.use(cors());
 app.use(express.json());
 
-// ✅ Serve front-end first (this line must come first)
+// ✅ Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
-
-// Serve uploaded files statically
 app.use('/uploads', express.static('uploads'));
 
-// Multer upload config
+// ✅ Multer 
 const upload = multer({
   storage: multer.diskStorage({
     destination: process.env.NODE_ENV === 'production' ? '/tmp' : 'uploads/',
@@ -35,29 +40,53 @@ const upload = multer({
   }
 });
 
-// Upload API
-app.post('/api/upload', upload.single('image'), (req, res) => {
+// ✅ 
+let db;
+connectDB().then(database => {
+  db = database;
+  console.log("✅ MongoDB connected");
+});
+
+// ✅ 
+app.post('/api/upload', upload.single('image'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ message: 'No file uploaded' });
   }
+
   console.log('Received file:', req.file.originalname);
+
+  // 
+  try {
+    const record = {
+      filename: req.file.filename,
+      uploadTime: new Date(),
+      extractedText: '', // 
+    };
+    if (db) {
+      await db.collection('uploads').insertOne(record);
+    }
+  } catch (err) {
+    console.error('❌ Failed to save record:', err.message);
+  }
+
   res.json({
     message: 'Upload successful',
     filename: req.file.filename
   });
 });
 
-// Simple API for test
-app.get('/api/hello', (req, res) => {
-  res.send('Hello from server!');
+// ✅ 
+app.get('/api/hello', async (req, res) => {
+  const collections = db ? await db.listCollections().toArray() : [];
+  res.send('Hello from server! DB contains: ' + collections.map(c => c.name).join(', '));
 });
 
-// React fallback for all non-API routes
+// ✅ React fallback
 app.get(/^(?!\/api).*/, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Start server
+// ✅ 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`✅ Server running on port ${PORT}`);
 });
