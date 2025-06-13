@@ -4,13 +4,19 @@ function UploadHistory() {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [clearing, setClearing] = useState(false);
-  const [solvingMap, setSolvingMap] = useState({}); // Track solving state per record
+  const [solvingMap, setSolvingMap] = useState({});
+
+  const token = localStorage.getItem('token');
 
   // Load upload records on mount
   useEffect(() => {
     const fetchRecords = async () => {
       try {
-        const res = await fetch('/api/records');
+        const res = await fetch('/api/records', {
+          headers: {
+            Authorization: 'Bearer ' + token,
+          },
+        });
         const data = await res.json();
         setRecords(data);
       } catch (err) {
@@ -21,7 +27,7 @@ function UploadHistory() {
     };
 
     fetchRecords();
-  }, []);
+  }, [token]);
 
   // Clear all records
   const handleClearAll = async () => {
@@ -29,7 +35,11 @@ function UploadHistory() {
 
     setClearing(true);
     try {
-      const res = await fetch('/api/clear-records');
+      const res = await fetch('/api/clear-records', {
+        headers: {
+          Authorization: 'Bearer ' + token,
+        },
+      });
       const text = await res.text();
       alert(text);
       setRecords([]);
@@ -46,7 +56,12 @@ function UploadHistory() {
     if (!window.confirm('Delete this record?')) return;
 
     try {
-      const res = await fetch(`/api/records/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/records/${id}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: 'Bearer ' + token,
+        },
+      });
       const data = await res.json();
       alert(data.message);
       setRecords((prev) => prev.filter((rec) => rec._id !== id));
@@ -61,7 +76,12 @@ function UploadHistory() {
     setSolvingMap((prev) => ({ ...prev, [id]: true }));
 
     try {
-      const res = await fetch(`/api/solve/${id}`, { method: 'POST' });
+      const res = await fetch(`/api/solve/${id}`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+        },
+      });
       const data = await res.json();
 
       setRecords((prev) =>

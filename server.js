@@ -6,9 +6,11 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { ObjectId } from 'mongodb';
+import jwt from 'jsonwebtoken';
 import connectDB from './db.js';
 import OpenAI from 'openai';
 import Tesseract from 'tesseract.js';
+import authRoutes from './auth.js';
 
 dotenv.config();
 
@@ -21,9 +23,24 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
-
 if (process.env.NODE_ENV !== 'production') {
   app.use('/uploads', express.static('uploads'));
+}
+
+// 
+function verifyToken(req, res, next) {
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Missing token' });
+  }
+
+  try {
+    const decoded = jwt.verify(auth.split(' ')[1], process.env.JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
 }
 
 let db;
@@ -49,14 +66,14 @@ const upload = multer({
   }
 });
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Upload endpoint with OCR + keyword extraction
-app.post('/api/upload', upload.single('image'), async (req, res) => {
+// 
+app.use('/api', authRoutes);
+
+// 
+app.post('/api/upload', verifyToken, upload.single('image'), async (req, res) => {
   if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
-
   console.log('📥 Received file:', req.file.originalname);
 
   try {
@@ -65,23 +82,21 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
       uploadTime: new Date(),
       extractedText: '',
       keywords: '',
-      solution: '', // <- optional solution field, initially blank
+      solution: '',
+      userId: new ObjectId(req.user.userId) // 
     };
 
     const result = await db.collection('uploads').insertOne(record);
     const insertedId = result.insertedId;
 
-    // OCR step
-    const imagePath =
-      process.env.NODE_ENV === 'production'
-        ? path.join('/tmp', req.file.filename)
-        : path.join(__dirname, 'uploads', req.file.filename);
+    const imagePath = process.env.NODE_ENV === 'production'
+      ? path.join('/tmp', req.file.filename)
+      : path.join(__dirname, 'uploads', req.file.filename);
 
     const ocr = await Tesseract.recognize(imagePath, 'eng');
     const extractedText = ocr.data.text.trim().slice(0, 500);
     console.log('🔍 OCR Result:', extractedText);
 
-    // Keyword extraction step
     const completion = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: [
@@ -106,11 +121,14 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
   }
 });
 
-// 🔍 Solve question using GPT (on-demand)
-app.post('/api/solve/:id', async (req, res) => {
+// ✅ Solve question using GPT
+app.post('/api/solve/:id', verifyToken, async (req, res) => {
   try {
     const id = req.params.id;
-    const record = await db.collection('uploads').findOne({ _id: new ObjectId(id) });
+    const record = await db.collection('uploads').findOne({ 
+      _id: new ObjectId(id), 
+      userId: new ObjectId(req.user.userId) 
+    });
 
     if (!record || !record.extractedText) {
       return res.status(404).json({ message: 'Record not found or no text to solve.' });
@@ -142,13 +160,13 @@ app.post('/api/solve/:id', async (req, res) => {
   }
 });
 
-// Get latest records
-app.get('/api/records', async (req, res) => {
+// 
+app.get('/api/records', verifyToken, async (req, res) => {
   try {
     if (!db) return res.status(503).json({ message: 'Database not ready' });
 
     const records = await db.collection('uploads')
-      .find({})
+      .find({ userId: new ObjectId(req.user.userId) })
       .sort({ uploadTime: -1 })
       .limit(20)
       .toArray();
@@ -160,16 +178,19 @@ app.get('/api/records', async (req, res) => {
   }
 });
 
-// Delete single record
-app.delete('/api/records/:id', async (req, res) => {
+// 
+app.delete('/api/records/:id', verifyToken, async (req, res) => {
   try {
     const id = req.params.id;
-    const result = await db.collection('uploads').deleteOne({ _id: new ObjectId(id) });
+    const result = await db.collection('uploads').deleteOne({ 
+      _id: new ObjectId(id),
+      userId: new ObjectId(req.user.userId)
+    });
 
     if (result.deletedCount === 1) {
       res.json({ message: '✅ Record deleted' });
     } else {
-      res.status(404).json({ message: '❌ Record not found' });
+      res.status(404).json({ message: '❌ Record not found or not owned by user' });
     }
   } catch (err) {
     console.error('❌ Failed to delete record:', err.message);
@@ -177,7 +198,7 @@ app.delete('/api/records/:id', async (req, res) => {
   }
 });
 
-// Clear all records
+//
 app.get('/api/clear-records', async (req, res) => {
   try {
     const result = await db.collection('uploads').deleteMany({});
@@ -187,13 +208,13 @@ app.get('/api/clear-records', async (req, res) => {
   }
 });
 
-// Debug route
+// 🌐 Debug route
 app.get('/api/hello', async (req, res) => {
   const collections = db ? await db.listCollections().toArray() : [];
   res.send('Hello from server! DB contains: ' + collections.map(c => c.name).join(', '));
 });
 
-// Frontend fallback
+// Fallback to frontend
 app.get(/^(?!\/api).*/, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
