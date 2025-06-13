@@ -1,0 +1,103 @@
+import { useEffect, useState } from 'react';
+
+function UploadHistory() {
+  const [records, setRecords] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [clearing, setClearing] = useState(false);
+
+  // Load upload records on mount
+  useEffect(() => {
+    const fetchRecords = async () => {
+      try {
+        const res = await fetch('/api/records');
+        const data = await res.json();
+        setRecords(data);
+      } catch (err) {
+        console.error('Failed to load history:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchRecords();
+  }, []);
+
+  // Clear all records
+  const handleClearAll = async () => {
+    if (!window.confirm('Are you sure you want to delete all records?')) return;
+
+    setClearing(true);
+    try {
+      const res = await fetch('/api/clear-records');
+      const text = await res.text();
+      alert(text);
+      window.location.reload(); // Refresh after clearing
+    } catch (err) {
+      console.error('Failed to clear records:', err);
+      alert('Failed to clear records');
+    } finally {
+      setClearing(false);
+    }
+  };
+
+  return (
+    <div style={{ padding: '20px' }}>
+      <h2>📜 Upload History</h2>
+
+      {/* Clear button */}
+      <div style={{ textAlign: 'right', marginBottom: '10px' }}>
+        <button
+          onClick={handleClearAll}
+          disabled={clearing}
+          style={{
+            padding: '6px 12px',
+            border: '1px solid #888',
+            borderRadius: '4px',
+            backgroundColor: '#fff',
+            cursor: 'pointer',
+            fontSize: '0.9rem',
+          }}
+        >
+          🧹 Clear All Records
+        </button>
+      </div>
+
+      {loading ? (
+        <p>Loading records...</p>
+      ) : records.length === 0 ? (
+        <p>No records found.</p>
+      ) : (
+        <div style={{ display: 'grid', gap: '20px' }}>
+          {records.map((rec) => {
+            const url =
+              import.meta.env.MODE === 'production'
+                ? `/tmp/${rec.filename}` // GAE: for /tmp or GCS (future)
+                : `/uploads/${rec.filename}`;
+
+            return (
+              <div
+                key={rec._id}
+                style={{
+                  border: '1px solid #ccc',
+                  padding: '10px',
+                  borderRadius: '6px',
+                }}
+              >
+                <img
+                  src={url}
+                  alt="Uploaded"
+                  style={{ maxWidth: '200px', borderRadius: '4px' }}
+                />
+                <p style={{ marginTop: '10px', fontSize: '0.9rem' }}>
+                  Uploaded at: {new Date(rec.uploadTime).toLocaleString()}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default UploadHistory;
