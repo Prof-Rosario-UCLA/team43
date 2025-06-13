@@ -8,7 +8,7 @@ import { dirname } from 'path';
 import { ObjectId } from 'mongodb';
 import connectDB from './db.js';
 import OpenAI from 'openai';
-import Tesseract from 'tesseract.js'; // ✅ OCR support
+import Tesseract from 'tesseract.js';
 
 dotenv.config();
 
@@ -53,7 +53,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Upload endpoint with OCR + GPT
+// Upload endpoint with OCR + keyword extraction
 app.post('/api/upload', upload.single('image'), async (req, res) => {
   if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
 
@@ -65,6 +65,7 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
       uploadTime: new Date(),
       extractedText: '',
       keywords: '',
+      solution: '', // <- optional solution field, initially blank
     };
 
     const result = await db.collection('uploads').insertOne(record);
@@ -73,14 +74,14 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
     // OCR step
     const imagePath =
       process.env.NODE_ENV === 'production'
-        ? `/tmp/${req.file.filename}`
-        : `uploads/${req.file.filename}`;
+        ? path.join('/tmp', req.file.filename)
+        : path.join(__dirname, 'uploads', req.file.filename);
 
     const ocr = await Tesseract.recognize(imagePath, 'eng');
     const extractedText = ocr.data.text.trim().slice(0, 500);
     console.log('🔍 OCR Result:', extractedText);
 
-    // GPT step
+    // Keyword extraction step
     const completion = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: [
@@ -105,7 +106,43 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
   }
 });
 
-// Get records
+// 🔍 Solve question using GPT (on-demand)
+app.post('/api/solve/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const record = await db.collection('uploads').findOne({ _id: new ObjectId(id) });
+
+    if (!record || !record.extractedText) {
+      return res.status(404).json({ message: 'Record not found or no text to solve.' });
+    }
+
+    console.log(`🤖 Solving for: ${record.extractedText}`);
+
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-3.5-turbo',
+      messages: [
+        {
+          role: 'user',
+          content: `Please solve the following question in detail:\n"${record.extractedText}"`,
+        },
+      ],
+    });
+
+    const solution = completion.choices[0].message.content.trim();
+
+    await db.collection('uploads').updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { solution } }
+    );
+
+    res.json({ solution });
+  } catch (err) {
+    console.error('❌ Failed to solve:', err.message);
+    res.status(500).json({ message: 'Solve failed' });
+  }
+});
+
+// Get latest records
 app.get('/api/records', async (req, res) => {
   try {
     if (!db) return res.status(503).json({ message: 'Database not ready' });
@@ -140,7 +177,7 @@ app.delete('/api/records/:id', async (req, res) => {
   }
 });
 
-// Clear all
+// Clear all records
 app.get('/api/clear-records', async (req, res) => {
   try {
     const result = await db.collection('uploads').deleteMany({});

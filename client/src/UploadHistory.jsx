@@ -4,6 +4,7 @@ function UploadHistory() {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [clearing, setClearing] = useState(false);
+  const [solvingMap, setSolvingMap] = useState({}); // Track solving state per record
 
   // Load upload records on mount
   useEffect(() => {
@@ -31,7 +32,7 @@ function UploadHistory() {
       const res = await fetch('/api/clear-records');
       const text = await res.text();
       alert(text);
-      setRecords([]); // Update UI without full reload
+      setRecords([]);
     } catch (err) {
       console.error('Failed to clear records:', err);
       alert('Failed to clear records');
@@ -52,6 +53,27 @@ function UploadHistory() {
     } catch (err) {
       console.error('Failed to delete record:', err);
       alert('Failed to delete record');
+    }
+  };
+
+  // Solve record (GPT-based)
+  const handleSolve = async (id) => {
+    setSolvingMap((prev) => ({ ...prev, [id]: true }));
+
+    try {
+      const res = await fetch(`/api/solve/${id}`, { method: 'POST' });
+      const data = await res.json();
+
+      setRecords((prev) =>
+        prev.map((rec) =>
+          rec._id === id ? { ...rec, solution: data.solution } : rec
+        )
+      );
+    } catch (err) {
+      console.error('Failed to solve question:', err);
+      alert('Solve failed');
+    } finally {
+      setSolvingMap((prev) => ({ ...prev, [id]: false }));
     }
   };
 
@@ -113,6 +135,41 @@ function UploadHistory() {
                 <p style={{ fontSize: '0.85rem', color: '#444' }}>
                   <strong>📌 Keywords:</strong> {rec.keywords || 'Not available'}
                 </p>
+
+                {/* 💡 Solve Button */}
+                <div style={{ marginTop: '10px' }}>
+                  <button
+                    onClick={() => handleSolve(rec._id)}
+                    disabled={solvingMap[rec._id]}
+                    style={{
+                      padding: '6px 10px',
+                      fontSize: '0.85rem',
+                      borderRadius: '4px',
+                      border: '1px solid #aaa',
+                      backgroundColor: '#f9f9f9',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    💡 {solvingMap[rec._id] ? 'Solving...' : 'Solve'}
+                  </button>
+                </div>
+
+                {/* 🧠 GPT Solution */}
+                {rec.solution && (
+                  <div
+                    style={{
+                      marginTop: '12px',
+                      padding: '8px',
+                      background: '#f5f5f5',
+                      borderRadius: '4px',
+                      whiteSpace: 'pre-wrap',
+                      fontSize: '0.85rem',
+                    }}
+                  >
+                    <strong>🧠 Solution:</strong> <br />
+                    {rec.solution}
+                  </div>
+                )}
 
                 {/* 🗑 Delete Button */}
                 <button
